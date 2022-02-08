@@ -410,7 +410,7 @@ forward e reverse. O relatório, além tem uma tabela com o conteo de
 sequências por amostra. No gráfico interativo de qualidade, você pode
 avaliar a qualidade, pelo valor do *Phred score*.
 
-## 3. Primmers Trimming
+## 3. Remoção de Primers
 
 **Cutadapt** é um plugin do Qiime2 usado para trimar os primers das
 sequências. O presente *dataset* de exemplo foi sequênciada a região V4
@@ -472,7 +472,7 @@ Compare o número de sequências antes e depois da trimagem dos primers.
 Se você perdeu uma porcentagem muito alto, revise a sequências dos
 primers usados para seu sequênciamento.
 
-## 4. Denoising into ASVs
+## 4. Denoising em ASVs
 
 Qiime2 oferece dois diferentes *pipelines* para este paso, **deblur** e
 **DADA2**. Aqui usaremos **DADA2**.
@@ -1272,7 +1272,7 @@ organizar e padronizar a distribuição de funções extras do R.
 ``` r
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
-BiocManager::install("dada2", version = "3.14")
+BiocManager::install("dada2", version = "3.12")
 ```
 
 -   **Instalação desde a fonte**
@@ -1280,7 +1280,7 @@ BiocManager::install("dada2", version = "3.14")
 ``` r
 install.packages("devtools")
 library("devtools")
-devtools::install_github("benjjneb/dada2", ref="v1.16")
+devtools::install_github("benjjneb/dada2", ref="v1.20")
 ```
 
 Se as duas opções de instalação não funcionam, consulte o [manual de
@@ -1290,14 +1290,455 @@ onde tem outros jeitos de instalar.
 Para saber a versão instalada:
 
 ``` r
-packageVersion('dada2')
+library(dada2);packageVersion('dada2')
 ```
 
-# Em construção…
+## 1. Remoção de Primers com Cutadapt
+
+### 1.1. Instalação
+
+[Cutadapt](https://cutadapt.readthedocs.io/en/stable/) é uma ferramenta
+para remoção de adaptadores, primers, caudas poly-A e outros tipos de
+sequências indesejáveis.
+
+Instale **Cutadapt** usando Anaconda, através da criação de um ambiente
+virtual, chamado Bioinfo.
+
+**Nota:** A organização das amostras está na seção 1 da primeira parte
+deste tutorial [I Metataxonômica com
+Qiime2](https://github.com/khidalgo85/metataxonomics#i-metataxonomica-com-qiime2).
+
+    # Crie o ambiente
+    conda create -n Bioinfo
+
+    # Ative o ambiente
+    conda activate Bioinfo
+
+    # Instale Cutadapt
+    conda install -c bioconda cutadapt
+
+### 1.2. Uso
+
+Uma vez instalada a ferramenta, pode ser usada para a remoção dos
+primers, rodando o seguinte comando:
+
+    # Crie uma pasta para a saída
+    mkdir 01.PrimersTrim
+
+    # Loop para Cutadapt
+    for i in 00.RawData/*_1.fq.gz;
+    do
+    SAMPLE=$(basename $i _1.fq.gz)
+    cutadapt --pair-filter any --no-indels -g "GTGYCAGCMGCCGCGGTAA" -G "GGACTACNVGGGTWTCTAAT" \
+    --discard-untrimmed -o  01.PrimersTrim/${SAMPLE}_1.fq.gz \
+    -p 01.PrimersTrim/${SAMPLE}_2.fq.gz > 01.PrimersTrim/${SAMPLE}_cutadapt_log.txt $i  00.RawData/${SAMPLE}_2.fq.gz
+    done
+
+**Explicação do comando** O loop do comando anterior pega os dois pair
+(`--pair-filter`) de amostra dentro de `00.RawData/` e remove os primers
+específicos usados para a amplificação das sequências, definidos nos
+parâmetros `-g` (forward) e `-G` (reverse). Descarta as sequências onde
+não foi encontrado o primer (`--discard-untrimmed`) e salva as
+sequências trimadas na pasta definida em `-o`. Além, escreve arquivos
+`.txt` com as estatísticas da remoção dos primers para cada amostra
+(p.e. `sample1_cutadapt_log.txt`).
+
+### 2. Processamento em R
+
+A partir de agora os comandos e processos serão rodados no R usando o
+IDE RStudio. Ative o carregue as funções do pacote `dada2`, usando a
+função `library()`.
+
+``` r
+library(dada2); packageVersion("dada2")
+#> Loading required package: Rcpp
+#> [1] '1.20.0'
+```
+
+#### 2.1. Definiendo o diretório de trabalho
+
+``` r
+setwd("docs/") # Define o diretório de trabalho
+```
+
+#### 2.2. Carregando os dados no R
+
+``` r
+my.dir <- "docs/01.PrimersTrim" #cria a variável my.dir com o caminho ao diretório das amostras
+list.files(my.dir) #Lista o conteúdo do diretório
+#>  [1] "filtered"         "sample10_1.fq.gz" "sample10_2.fq.gz" "sample12_1.fq.gz"
+#>  [5] "sample12_2.fq.gz" "sample2_1.fq.gz"  "sample2_2.fq.gz"  "sample4_1.fq.gz" 
+#>  [9] "sample4_2.fq.gz"  "sample6_1.fq.gz"  "sample6_2.fq.gz"  "sample7_1.fq.gz" 
+#> [13] "sample7_2.fq.gz"
+
+forwards <- sort(list.files(my.dir, pattern = "_1.fq.gz", full.names = TRUE)) # ordena, e lista os nomes dos arquivos que terminem com o padrão definido (pair 1/forwards), e salva na variável forwards
+
+reverses <- sort(list.files(my.dir, pattern = "_2.fq.gz", full.names = TRUE)) # idem. porém com os arquivos pair 2/reverse
+
+names <- sapply(strsplit(basename(forwards), "_1", "_2"), `[`, 1) # Define os nomes das amostras na variável names
+```
+
+#### 2.3. Control de Qualidade
+
+``` r
+quality.forwards <- plotQualityProfile(forwards)
+#> Warning: `guides(<scale> = FALSE)` is deprecated. Please use `guides(<scale> =
+#> "none")` instead.
+quality.forwards  # Qualidade dos pair 1/forward
+```
+
+<img src="imgs/unnamed-chunk-8-1.png" width="100%" /> Você pode gerar um
+gráfico com todos os heat maps da qualidade das sequências forward. Ou
+só escolher algumas amostras para serem gráficadas. Como no exemplo
+embaixo, onde só foi gerado o gráfico com duas amostras das sequências
+reverse. Use as caixas para selecionar as amostras que quiser.
+
+``` r
+quality.reverses<- plotQualityProfile(reverses[1:2])
+#> Warning: `guides(<scale> = FALSE)` is deprecated. Please use `guides(<scale> =
+#> "none")` instead.
+quality.reverses # Qualidade dos pair 2/reverse 
+```
+
+<img src="imgs/unnamed-chunk-9-1.png" width="100%" />
+
+**Analisando o gráfico**: A escala de cinza é um heat map da frequência
+de cada score de qualidade (*Phred Score*) para cada posição das bases.
+A média desse valor está indicado com a linha verde, e os quartiles da
+distribuição da qualidade pelas linhas laranjas. O gráfico também
+apresenta a quantidade de sequências (letras vermelhas)
+
+No caso de ambas reads, é necessário fazer um corte no final das
+sequências onde a qualidade é menor. Por tanto vamos a truncar as reads
+forward a 200 bp (cortando as últimas 50 bases) e as reads reverse a 180
+bp (cortando as últimas 70 bases). Como já foi descrito antes, a região
+sequenciada nas amostras foi a V4 com um tamanho de 291 bp. Tendo
+sequências de 200 bp e 180 bp, ainda teremos uma zona de sobreposição de
+189 bp. **Preste muita atenção** a isto se a região sequenciada de suas
+amostras for maior, por exemplo V3-V4, que tem um tamanho de \~460 bp.
+Precisa manter pelo menos 20 nucleotideos de sobreposição.
+
+#### 2.4. Filtragem
+
+Após determinar quais serão os pontos de corte, por observação dos
+gráficos de qualidade, então será usada a função `filterAndTrim()` para
+filtrar e trimar as sequências.
+
+``` r
+filter.forwards <- file.path(my.dir, "filtered", paste0(names, "_F_filter.fq.gz")) # cria um diretório chamado "filtered" e cola os nomes das amostras (names) com "_F_filter.fq.gz"
+filter.reverses <- file.path(my.dir, "filtered", paste0(names, "_R_filter.fq.gz")) # cria um diretório chamado "filtered" e cola os nomes das amostras (names) com "_R_filter.fq.gz"
+
+names(filter.forwards) <- names # assigna os nomes das amostras
+names(filter.reverses) <- names # assigna os nomes das amostras
+```
+
+Serão usado parâmetros *default*, nos parâmetros. Para saber que é cada
+parâmetro, dígite `?filterAndTrim()`.
+
+``` r
+filter.out <- filterAndTrim(forwards, filter.forwards, reverses, filter.reverses, truncLen = c(200,180), 
+                            maxN = 0, maxEE = c(2,2),
+                            truncQ = 2, rm.phix = TRUE,
+                            compress = TRUE,
+                            multithread = TRUE)
+
+filter.out
+#>                  reads.in reads.out
+#> sample10_1.fq.gz   149410    123234
+#> sample12_1.fq.gz   136624    113389
+#> sample2_1.fq.gz    148873    122431
+#> sample4_1.fq.gz    140549    115579
+#> sample6_1.fq.gz    122512    100721
+#> sample7_1.fq.gz    140199    116075
+```
+
+Perceba que na função, devem ser chamadas as sequências forward, e as
+reverse, assim como as variáveis assignadas para as reads filtradas.
+
+Digitando o nome da variável criada para o processo de filtragem
+`filter.out`, você vai obter informação sobre as reads que entraram
+antes do processo e as que sairam despois da filtragem.
+
+Se quiser conferir a qualidade depois da filtragem:
+
+``` r
+quality.forwards.filter <- plotQualityProfile(filter.forwards)
+#> Warning: `guides(<scale> = FALSE)` is deprecated. Please use `guides(<scale> =
+#> "none")` instead.
+quality.forwards.filter
+```
+
+<img src="imgs/unnamed-chunk-12-1.png" width="100%" />
+
+``` r
+quality.reverses.filt <- plotQualityProfile(filter.reverses)
+#> Warning: `guides(<scale> = FALSE)` is deprecated. Please use `guides(<scale> =
+#> "none")` instead.
+quality.reverses.filt
+```
+
+<img src="imgs/unnamed-chunk-12-2.png" width="100%" />
+
+#### 2.5. Aprendendo da taxa de erros
+
+O algorítmo de **DADA2** faz uso de um modelo paramétrico de erros e
+cada set de amostras tem taxas de erros diferentes. A função
+`learnErros()` aprende este modelo de erros dos dados, alternando a
+estimativa das taxas de erro e a inferência da composição da amostra até
+convergirem para uma solução conjuntamente consistente.
+
+``` r
+error.forwards <- learnErrors(filter.forwards, multithread = TRUE) # modelo de erros para reads forward
+#> 115070800 total bases in 575354 reads from 5 samples will be used for learning the error rates.
+
+error.reverses <- learnErrors(filter.reverses, multithread = TRUE) # modelo de erros para reads reverse
+#> 103563720 total bases in 575354 reads from 5 samples will be used for learning the error rates.
+```
+
+``` r
+plotErrors(error.forwards, nominalQ = TRUE) # plot modelo de erros
+#> Warning: Transformation introduced infinite values in continuous y-axis
+#> Transformation introduced infinite values in continuous y-axis
+```
+
+<img src="imgs/unnamed-chunk-14-1.png" width="100%" />
+
+No plot, pode se observar as taxas de erro para cada transição de bases
+(A–&gt;C, A–&gt;G,…). Os pontos representam os erros observados para
+cada score de qualidade consenso. A linha preta mostra a taxa estimada
+de erros após aplicado o algorítmo. A linha vermelha a taxa de erros
+esperada. No exemplo a taxa de erros estimada (linha preta) tem um bom
+ajuste às observadas (pontos) e as taxas de erro caem com o aumento da
+qualidade como esperado.
+
+#### 2.5. Inferência
+
+A continuação será aplicado o algorítmo de inferência, o qual irá a
+detectar sequências únicas em cada amostra
+
+``` r
+dada.forwards <- dada(filter.forwards, err= error.forwards, multithread=TRUE)
+#> Sample 1 - 123234 reads in 52575 unique sequences.
+#> Sample 2 - 113389 reads in 52032 unique sequences.
+#> Sample 3 - 122431 reads in 53634 unique sequences.
+#> Sample 4 - 115579 reads in 51513 unique sequences.
+#> Sample 5 - 100721 reads in 43892 unique sequences.
+#> Sample 6 - 116075 reads in 52696 unique sequences.
+```
+
+``` r
+dada.reverses <- dada(filter.reverses, err= error.reverses, multithread=TRUE)
+#> Sample 1 - 123234 reads in 56033 unique sequences.
+#> Sample 2 - 113389 reads in 52985 unique sequences.
+#> Sample 3 - 122431 reads in 57275 unique sequences.
+#> Sample 4 - 115579 reads in 51532 unique sequences.
+#> Sample 5 - 100721 reads in 45117 unique sequences.
+#> Sample 6 - 116075 reads in 51212 unique sequences.
+```
+
+Você pode explorar o resultado do algorítmo de DADA2 em cada uma das
+amostras:
+
+``` r
+dada.forwards[[4]]
+#> dada-class: object describing DADA2 denoising results
+#> 1355 sequence variants were inferred from 51513 input unique sequences.
+#> Key parameters: OMEGA_A = 1e-40, OMEGA_C = 1e-40, BAND_SIZE = 16
+```
+
+Na amostra 4, após o denoising, foram inferidas 1355 ASVs de 51513
+sequências únicas.
+
+#### 2.6. Merge
+
+Agora é momento de fazer o merge entre as reads forward e reverse para
+obter as sequências completas. Este processo é feito por alinhamento das
+reads forward com a sequência complemento ou reverse para a formação das
+sequências “contig”. Por *default*, os contigs só serão construídos se
+entre as reads forward e reverse existe no mínimo 12 bases de
+sobreposição, e são identicas na região de sobreposição.
+
+``` r
+mergers <- mergePairs(dada.forwards, filter.forwards, dada.reverses, filter.reverses,
+                      verbose = TRUE)
+#> 114732 paired-reads (in 1151 unique pairings) successfully merged out of 119729 (in 2863 pairings) input.
+#> 104132 paired-reads (in 1130 unique pairings) successfully merged out of 109367 (in 3005 pairings) input.
+#> 112368 paired-reads (in 1295 unique pairings) successfully merged out of 118138 (in 3169 pairings) input.
+#> 106578 paired-reads (in 1158 unique pairings) successfully merged out of 111618 (in 2758 pairings) input.
+#> 93417 paired-reads (in 942 unique pairings) successfully merged out of 97375 (in 2238 pairings) input.
+#> 106470 paired-reads (in 1101 unique pairings) successfully merged out of 112105 (in 2880 pairings) input.
+
+# Explore os contigs gerados na amostra 2
+head(mergers[[2]])
+#>                                                                                                                                                                                                                                                        sequence
+#> 1 TACGGAGGATGCAAGCGTTATCCGGATTCATTGGGTTTAAAGGGTGCGCAGGCGGAATGATAAGTCAGTGGTGAAATCTCCCGGCTCAACCGGGAAACTGCCATTGATACTGTCATTCTTGAGTACAGTTGAAGTGGGCGGAATGTGTCATGTAGCGGTGAAATGCTTAGATATGACACAGAACACCGATAGCGAAGGCAGCTCACTAAGCTGTAACTGACGCTCATGCACGAAAGCGTGGGGATCAAACAGG
+#> 2 TACGGAGGATGCGAGCGTTATCCGGATTCATTGGGTTTAAAGGGTGCGTAGGCGGACTATTAAGTCAGTGGTGAAATCCTGCAGCTTAACTGCAGAACTGCCATTGATACTGATAGCCTTGAGTTTGGTTAAGGTAGGCGGAATGTGTAATGTAGCGGTGAAATGCTTAGATATTACACAGAACACCAATTGCGTAGGCAGCTTACTGAGCCGACACTGACGCTGAGGCACGAAAGCGTGGGGATCGAACAGG
+#> 3 TACGTAGGGGGCGAGCGTTGTCCGAATTCACTGGGCGTAAAGCGCGCGTAGGCGGGTTTTTAAGTTGTGGGTGAAATTCCGAGGCTCAACCTCGTAACTGCCTGCAAAACTGGGAGCCTTGAGGTATGGAGAGGGAAGTGGAATTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCCGTGGCGAAGGCGGCTTCCTGGCCATATCCTGACGCTGAGGTGCGAAAGCTAGGGTAGCGAACGGG
+#> 4 TACGGAGGATGCAAGCGTTATCCGGATTTATTGGGTTTAAAGGGTGCGCAGGTTGTTTTATAAGTCAGTGGTGAAAGTCTGTCGCTTAACGATAGGATTGCCATTGATACTGTAGGACTTGAGTATGGATGAGGTAGGCGGAATGTGTAGTGTAGCGGTGAAATGCATAGATATTACACAGAACGCCGATTGCGAAGGCAGCTTACTAATCCATGACTGACGCTGAGGCACGAAAGCGTGGGGATCAAACAGG
+#> 5 TACGGGGGGTGCAAGCGTTGTTCGGAATTATTGGGCGTAAAGAGCGTGTAGGCGGCTGAATAAGTCAGATGTGAAATCCCTGGGCTTAACCCAGGAAGTGCATTTGAAACTATTCAGCTTGAGTAGGGGAGAGGAAAGTGGAATTCCTGGTGTAGAGGTGAAATTCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGACTTTCTGGCCCTATACTGACGCTGAGACGCGAGAGCGTGGGTAGCAAACAGG
+#> 6 TACGTAGGGTGCGAGCGTTAATCGGAATTACTGGGCGTAAAGCGTGCGCAGGCGGTTTTGTAAGACAGATGTGAAATCCCCGGGCTTAACCTGGGAACTGCGTTTGTGACTGCAAGGCTAGAGTACGGCAGAGGGGGGTGGAATTCCTGGTGTAGCAGTGAAATGCGTAGATATCAGGAGGAACACCGATGGCGAAGGCAGCCCCCTGGGCCTGTACTGACGCTCATGCACGAAAGCGTGGGGAGCAAACAGG
+#>   abundance forward reverse nmatch nmismatch nindel prefer accept
+#> 1      2782       1       2    127         0      0      1   TRUE
+#> 2      2083       2       1    127         0      0      2   TRUE
+#> 3      1849       3       4    127         0      0      1   TRUE
+#> 4      1665       4       3    127         0      0      2   TRUE
+#> 5      1574       5       5    127         0      0      2   TRUE
+#> 6      1435       7       6    127         0      0      1   TRUE
+```
+
+O objeto `mergers` é uma lista de `data.frames` de cada amostra. Cada
+`data.frame` contém os “contigs” `$sequence`, a abundância `$abudance`,
+os índices das reads `$forward` e `$reverse` que foram unidas. As
+sequências pareadas que não tinham sobreposição exata foram removidas no
+comando anterior.
+
+**Nota:** Normalmente na maioria das sequências é feito o merge
+tranquilamente. Se não é no caso de suas amostras, é necessário rever os
+passos anteriores. Possívelmente na fase de trimagem foi removida a área
+de sobreposição.
+
+#### 2.7. Contruindo a tabela de sequências
+
+Com a função `makeSequenceTable()` será criada a tabela das sequências.
+
+``` r
+sequence.table <- makeSequenceTable(mergers)
+dim(sequence.table)
+#> [1]    6 2622
+```
+
+A tabela de sequências é uma matriz que está organizada assim: as
+colunas são ASVs (2622), e as linhas são as amostras (6), e os dados
+correspondem a número de vezes que foi encontrada cada uma das
+sequências em cada uma das amostras (frequências).
+
+A continuação, dê uma olhada na distribuição dos tamanhos da sequências.
+
+``` r
+table(nchar(getSequences(sequence.table)))
+#> 
+#>  208  223  250  251  252  253  254  255  256  261  262  286  301 
+#>    1    1    1    3  118 2362  122    6    2    1    1    1    3
+```
+
+#### 2.8. Remoção de Chimeras
+
+O algorítmo `dada` é capaz de corregir erros de substituição e indels,
+porém as chimeras podem permanecer. No entanto, devido à acurácia do
+método de denoising faz que identificar chimeras seja relativamente
+fácil.
+
+``` r
+sequence.table.nochim <- removeBimeraDenovo(sequence.table,method = "consensus", multithread=TRUE, verbose=TRUE)
+#> Identified 65 bimeras out of 2622 input sequences.
+
+dim(sequence.table.nochim)
+#> [1]    6 2557
+```
+
+``` r
+sum(sequence.table.nochim)/sum(sequence.table)
+#> [1] 0.9954822
+```
+
+A frequência de chimeras varia bastante de dataset para dataset, e
+depende de fatores como procedimentos experimentais e a complexidade da
+amostra. No dataset deste tutorial só 1% das sequências após o merge
+eram chimeras.
+
+**Nota:** A maioria das reads devem permancer após a remoção das
+chimeras. Se no seu dataset, você tiver uma porcentagem alta de
+chimeras, deve rever os primeiros passos. O mais provável seja que os
+primers não foram removidos.
+
+#### 2.8. Sumarizando
+
+A continução será criada uma tabela para sumarizar o número de reads em
+cada etapa do processo:
+
+``` r
+library(dplyr)
+getN <- function(x) sum(getUniques(x))
+resumo <- cbind(filter.out, sapply(dada.forwards, getN), sapply(dada.reverses, getN),
+               sapply(mergers, getN), rowSums(sequence.table.nochim))
+
+colnames(resumo) <- c("input", "filtered", "denoisedF", "denoisedR", "merged",
+                     "nonchim")
+
+rownames(resumo) <- names
+
+resumo %>% 
+  as_tibble() %>% 
+  mutate(Porcentage.Surviving = (nonchim *100)/input)
+#> # A tibble: 6 × 7
+#>    input filtered denoisedF denoisedR merged nonchim Porcentage.Surviving
+#>    <dbl>    <dbl>     <dbl>     <dbl>  <dbl>   <dbl>                <dbl>
+#> 1 149410   123234    121368    120883 114732  114343                 76.5
+#> 2 136624   113389    111399    110637 104132  103670                 75.9
+#> 3 148873   122431    119843    119740 112368  111778                 75.1
+#> 4 140549   115579    113334    112992 106578  105932                 75.4
+#> 5 122512   100721     98839     98501  93417   92972                 75.9
+#> 6 140199   116075    113946    113495 106470  106121                 75.7
+```
+
+Após todas as fases, ficaram \~75% das sequências em todas as amostras,
+o qual é muito bom.
+
+#### 2.9. Anotação Taxonômica
+
+Nesta fase é usada uma base de dados com sequências com asignação
+taxonômica conhecida. Uma das bases de dados mais usadas para
+classifição taxonômica de organismos es
+[SILVA](https://www.arb-silva.de/), a qual contém sequências das
+subunidades pequenas (SSU - *Small SubUnits*) dos ribossomas. Outras
+bases de dados usadas são [RDP](https://rdp.cme.msu.edu/) e
+[GreenGenes](https://greengenes.secondgenome.com/).
+
+Antes de usar as bases de dados directamente descarregadas da fonte, e
+necessário fazer um treinamento para poder usá-las. No entanto, os
+desenvolvedores de **DADA2** mantém as bases de dados **já treinadas**
+de RDP, GreenGenes e Silva em formato `.fasta`. Para taxonomia de
+fungos, a base de dados [UNITE ITS](https://unite.ut.ee/) pode se usada
+direto da fonte.
+
+Para este tutorial, faça *download* de
+[silva\_nr\_v138\_train\_set.fa.gz](https://doi.org/10.5281/zenodo.4587954)
+e coloque ele no diretório de trabalaho.
+
+``` r
+taxa.assig <- assignTaxonomy(sequence.table.nochim, "docs/silva_nr99_v138.1_train_set.fa.gz",
+                             multithread = TRUE)
+```
+
+``` r
+taxonomy <- taxa.assig
+
+rownames(taxonomy) <- NULL
+
+head(taxonomy)
+#>      Kingdom    Phylum             Class             Order               
+#> [1,] "Bacteria" "Bacteroidota"     "Bacteroidia"     "Bacteroidales"     
+#> [2,] "Bacteria" "Bacteroidota"     "Bacteroidia"     "Bacteroidales"     
+#> [3,] "Bacteria" "Bacteroidota"     "Bacteroidia"     "Sphingobacteriales"
+#> [4,] "Bacteria" "Desulfobacterota" "Syntrophia"      "Syntrophales"      
+#> [5,] "Bacteria" "Acidobacteriota"  "Aminicenantia"   "Aminicenantales"   
+#> [6,] "Archaea"  "Euryarchaeota"    "Methanobacteria" "Methanobacteriales"
+#>      Family                    Genus             
+#> [1,] "Bacteroidetes vadinHA17" NA                
+#> [2,] "Prolixibacteraceae"      NA                
+#> [3,] "Lentimicrobiaceae"       NA                
+#> [4,] "Smithellaceae"           "Smithella"       
+#> [5,] NA                        NA                
+#> [6,] "Methanobacteriaceae"     "Methanobacterium"
+```
+
+Ao finalizar você terá dois objetos principais: i) tabela de frequências
+(`sequence.table.nochim`) e ii) taxonomia (`taxa.assig`), os quais serão
+usados nas análises *downstream.*
 
 ------------------------------------------------------------------------
 
-## 11. Análises DownStream
+# III Análises DownStream
 
 Neste tutorial abordaremos algumas análises DownStream que podem ser
 feitas para este tipo de dados, especificamente usando a linguagem R. No
@@ -1316,3 +1757,5 @@ fazer análises deste tipo. Aqui estão algumas delas:
 
 -   [STAMP](https://github.com/LangilleLab/microbiome_helper/wiki/STAMP-preparation):
     Este programa permite fazer análises estatísticas e gerar gráficos.
+
+# Em construção
