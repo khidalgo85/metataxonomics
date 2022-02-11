@@ -922,7 +922,7 @@ mais detalhes. É possível filtra, ASVs raros, contaminantes (p.e.
 mitocondrias, cloroplastos), no clasificados, amostras com baixa
 profundidade de sequenciamento.
 
-## 8. Árvore filogenêtica
+## 8. Árvore filogenética
 
 O plugin **fasttree** é usado para colocar pequenas sequências dentro de
 uma árvore filogenética. Esta é um jeito útil de determinar a árvore
@@ -1352,7 +1352,7 @@ função `library()`.
 ``` r
 library(dada2); packageVersion("dada2")
 #> Loading required package: Rcpp
-#> [1] '1.20.0'
+#> [1] '1.22.0'
 ```
 
 #### 2.1. Definiendo o diretório de trabalho
@@ -1732,9 +1732,71 @@ head(taxonomy)
 #> [6,] "Methanobacteriaceae"     "Methanobacterium"
 ```
 
-Ao finalizar você terá dois objetos principais: i) tabela de frequências
-(`sequence.table.nochim`) e ii) taxonomia (`taxa.assig`), os quais serão
-usados nas análises *downstream.*
+#### 2.10. BONUS TRACK: Árvore Filogenética com Qiime2-MAFFT-FASTTREE
+
+Fazer o processamento de sequências do gene 16S rRNA no DADA2 usando o
+R, tem várias vantagens, principalmente na performance do algorítmo, com
+o qual é possível encontrar mais ASVs. No entanto uma das principais
+desvantagens de fazer o processamento no DADA2 é que até hoje não tem
+sido disponibilizado uma ferramenta otimizada para fazer a árvore
+filogenética no R. Tem pacotes que fazem o alinhamento (`msa`) múltiplo
+e outros que construem árvores (`phangorn`), mas não foram criados para
+alto número de espécies, como é o caso de datasets de NGS. Porém, com
+algumas formatações e alguns comandos no R e Linux e uma integração com
+Qiime2, é possível construir a tão desejada árvore filogenética.
+
+**1. Salvando a tabela de sequências**
+
+``` r
+write.table(t(sequence.table.nochim), "seqtab-nochim.txt", sep="\t", row.names=TRUE, col.names=NA, quote=FALSE)
+```
+
+**2. Extraíndo as sequências representativas**
+
+``` r
+uniquesToFasta(sequence.table.nochim, fout='rep-seqs.fna', ids=colnames(sequence.table.nochim))
+```
+
+**3. Importando no Qiime2**
+
+O seguinte comando é no qiime2 no Linux (Se precisar deve fazer upload
+dos arquivos `seqtab-nochim.txt` e `rep-seqs.fna` para o servidor onde
+usa o qiime2)
+
+    # Ativando o ambiente do qiime2
+    conda activate qiime2-2021.4
+
+    # Importando
+    qiime tools import \
+      --input-path rep-seqs.fna \
+      --type 'FeatureData[Sequence]' \
+      --output-path rep-seqs.qza
+
+**4. Transformando para formato `.biom`**
+
+    ## Adicionando o título especial do .biom
+    echo -n "#OTU Table" | cat - seqtab-nochim.txt > biom-table.txt
+
+    ## Transformando a .biom
+    biom convert -i biom-table.txt -o table.biom --table-type="OTU table" --to-hdf5
+
+**5. Importanto a tabela .biom como .qza**+
+
+    qiime tools import \
+      --input-path table.biom \
+      --type 'FeatureTable[Frequency]' \
+      --input-format BIOMV210Format \
+      --output-path table.qza
+
+Ao final destes 5 passos você terá o principais inputs para a construção
+da árvore, as sequências representativas `rep-seq.qza` e a tabela de
+frequências `table.qza`. Agora vai na seção [**8. Árvore
+Filogenética**](https://github.com/khidalgo85/metataxonomics#8-%C3%A1rvore-filogen%C3%AAtica)
+
+Ao finalizar todos os processos você terá dois objetos principais: i)
+tabela de frequências (`sequence.table.nochim`) e ii) taxonomia
+(`taxa.assig`), e a árvore (`tree.nwk`), os quais serão usados nas
+análises *downstream.*
 
 ------------------------------------------------------------------------
 
