@@ -1,0 +1,27 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: 'Metataxonomics: Two pipelines from seqs to taxa names'
+message: >-
+  If you use this dataset, please cite it using the metadata
+  from this file.
+type: dataset
+authors:
+  - given-names: Kelly
+    name-particle: J
+    family-names: Hidalgo Martinez
+    email: khidalgo@javeriana.edu.co
+    affiliation: GEMM-DRM-UNICAMP
+    orcid: 'https://orcid.org/0000-0003-4607-3750'
+repository-code: 'https://github.com/khidalgo85/metataxonomics'
+url: 'https://github.com/khidalgo85/metataxonomics'
+abstract: >-
+  This is a protocol with two different approaches (i.e.
+  Qiime2 and DADA2) to process 16S rRNA sequences from
+  illumina platforms. 
+keywords:
+  - metataxonomics
+  - DADA2
+  - Qiime2
+  - ASV
