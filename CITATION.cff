@@ -9,7 +9,7 @@ message: >-
 type: dataset
 authors:
   - given-names: Kelly
-    name-particle: J
+    name-particle:
     family-names: Hidalgo Martinez
     email: khidalgo@javeriana.edu.co
     affiliation: GEMM-DRM-UNICAMP
